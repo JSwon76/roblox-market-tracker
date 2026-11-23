@@ -1,0 +1,43 @@
+# 하루 한 번 게임 프로필(진열대·제작자·게임패스)을 찍고 data/profiles/ 에 커밋한다. (profiler.py)
+# 10분 간격 snapshot과는 다른 파일만 건드리므로 서로 충돌하지 않는다.
+# 수동 실행: 저장소 Actions 탭 → profile → Run workflow
+name: profile
+
+on:
+  schedule:
+    - cron: "17 0 * * *"      # 매일 00:17 UTC = 한국 09:17
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: profile
+  cancel-in-progress: false
+
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TZ: Asia/Seoul
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Take profiles
+        run: python3 profiler.py
+
+      - name: Commit data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/profiles
+          if git diff --cached --quiet; then
+            echo "새 데이터 없음"; exit 0
+          fi
+          git commit -q -m "profile $(date -u +%Y-%m-%d)"
+          for i in 1 2 3 4 5; do
+            git push -q && exit 0
+            git pull -q --rebase
+          done
+          exit 1
