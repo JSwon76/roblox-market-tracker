@@ -98,6 +98,20 @@ py tracker.py list            감시 목록 보기
 
 ---
 
+## 4-1. 게임 프로필 (`data\profiles\`, 하루 1회, `profiler.py`)
+
+스냅샷이 "누가 이겼나"라면, 프로필은 "왜 이겼나"의 후보를 모읍니다. 클라우드에서 매일 한국 시각 09:17쯤 자동으로 돕니다.
+
+- `YYYY-MM-DD.csv`: 그날 게임별 한 줄
+  - 진열대: `name`, `icon_id`(아이콘이 바뀌면 값이 바뀜), `thumbnail_ids`, `description`(앞 300자), `description_hash`
+  - 타이밍: `created_utc`, `genre_order`(같은 장르 안에서 몇 번째로 만들어졌나), `days_after_genre_first`(장르에서 가장 먼저 만든 게임보다 며칠 늦었나)
+  - 제작자: `creator_type`(User/Group), `group_members`, `creator_public_games`, `creator_other_best_name`·`creator_other_best_visits`(같은 제작자의 다른 게임 중 최고 방문)
+  - 수익화: `gamepass_count`, `gamepass_min`·`median`·`max`, `gamepass_prices`
+- `changes.csv`: 전날과 비교해 이름·아이콘·썸네일·설명·게임패스가 바뀐 기록. 승자가 무엇을 바꾼 뒤 떴는지 보는 용도
+- 업데이트 간격은 스냅샷의 `game_updated_utc`에 10분 단위로 이미 쌓이므로 프로필에는 따로 이력을 두지 않습니다.
+- 한계: "장르에서 가장 먼저"는 이 감시 목록 안에서의 순서라 진짜 원조가 아닐 수 있습니다. 클릭률·리텐션·추천 노출량은 공개 API에 없습니다.
+- PC에서 직접 돌리려면: `python profiler.py`
+
 ## 5. 알아 둘 점 (한계)
 
 - PC에서 돌릴 때는 **PC가 켜져 있고 창이 열려 있어야** 기록됩니다. 클라우드 실행은 이 제약이 없습니다.
