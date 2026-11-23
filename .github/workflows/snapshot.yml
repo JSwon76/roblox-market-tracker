@@ -1,0 +1,44 @@
+# 10분마다 로블록스 공식 API를 한 번 찍고 data/snapshots/ 에 커밋한다.
+# GitHub 예약 실행은 붐비면 10~30분 늦거나 가끔 건너뛸 수 있다 (빈 구간은 시각 간격으로 보임).
+# 수동 실행: 저장소 Actions 탭 → snapshot → Run workflow
+name: snapshot
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# 두 회차가 겹쳐 동시에 커밋하지 않도록 한 번에 하나씩
+concurrency:
+  group: snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      TZ: Asia/Seoul          # time_local 열을 한국 시각으로
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Take one snapshot
+        run: python3 tracker.py --once
+
+      - name: Commit data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/snapshots
+          if git diff --cached --quiet; then
+            echo "새 데이터 없음"; exit 0
+          fi
+          git commit -q -m "snapshot $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3; do
+            git push -q && exit 0
+            git pull -q --rebase
+          done
+          exit 1
