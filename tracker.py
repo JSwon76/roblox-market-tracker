@@ -45,24 +45,28 @@ APIS_BASE = os.environ.get("RBX_APIS_BASE", "https://apis.roblox.com")
 HERE = os.path.dirname(os.path.abspath(__file__))
 WATCHLIST = os.path.join(HERE, "watchlist.csv")
 DATA_DIR = os.path.join(HERE, "data")
-# 한 파일이 너무 커지지 않게 달(UTC 기준)마다 파일을 나눈다. 예: data/snapshots/2026-11.csv
+# 한 파일이 너무 커지지 않게 날(UTC 기준)마다 파일을 나눈다. 예: data/snapshots/2026-11-24.csv
+# (2026-11-23까지는 달마다 나눴다. 예전 달 파일 2026-11.csv도 요약할 때 함께 읽는다.)
 SNAP_DIR = os.path.join(DATA_DIR, "snapshots")
 CLOUD_DIR = os.path.join(DATA_DIR, "cloud")   # 클라우드에서 받은 사본 (로컬 기록과 섞지 않음)
 LOG_FILE = os.path.join(DATA_DIR, "tracker.log")
 
 
-def month_file(base_dir, when_utc):
-    return os.path.join(base_dir, f"{when_utc:%Y-%m}.csv")
+def day_file(base_dir, when_utc):
+    return os.path.join(base_dir, f"{when_utc:%Y-%m-%d}.csv")
 
 
-def months_between(start_utc, end_utc):
-    """start~end 구간에 걸친 달들 (YYYY-MM 날짜 객체 목록)."""
-    y, m = start_utc.year, start_utc.month
-    out = []
-    while (y, m) <= (end_utc.year, end_utc.month):
-        out.append(dt.datetime(y, m, 1, tzinfo=dt.timezone.utc))
-        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
-    return out
+def snapshot_names(start_utc, end_utc):
+    """start~end 구간에 걸친 파일 이름들: 날 파일 + 예전 형식의 달 파일."""
+    names = []
+    d = start_utc.date()
+    while d <= end_utc.date():
+        month = f"{d:%Y-%m}.csv"
+        if month not in names:
+            names.append(month)
+        names.append(f"{d:%Y-%m-%d}.csv")
+        d += dt.timedelta(days=1)
+    return names
 
 SNAPSHOT_FIELDS = [
     "time_utc", "time_local", "universe_id", "label",
@@ -210,7 +214,7 @@ def take_snapshot():
         })
 
     os.makedirs(SNAP_DIR, exist_ok=True)
-    path = month_file(SNAP_DIR, now_utc)
+    path = day_file(SNAP_DIR, now_utc)
     new_file = not os.path.exists(path)
     # utf-8-sig: 엑셀에서 열어도 한글이 안 깨지게
     with open(path, "a", encoding="utf-8-sig" if new_file else "utf-8", newline="") as f:
@@ -250,15 +254,14 @@ def cmd_run(interval_min, once):
 
 # ---------------------------------------------------------------- 클라우드 데이터 받기
 def cmd_pull(hours=24 * 62):
-    """GitHub 저장소의 data/snapshots/ 에서 필요한 달 파일을 data/cloud/ 로 내려받는다."""
+    """GitHub 저장소의 data/snapshots/ 에서 필요한 날(·예전 달) 파일을 data/cloud/ 로 내려받는다."""
     if not CLOUD_REPO:
         log("CLOUD_REPO가 비어 있어 클라우드 데이터를 받을 수 없습니다 (tracker.py 설정 부분).")
         return False
     now = dt.datetime.now(dt.timezone.utc)
     os.makedirs(CLOUD_DIR, exist_ok=True)
     got = 0
-    for m in months_between(now - dt.timedelta(hours=hours), now):
-        name = f"{m:%Y-%m}.csv"
+    for name in snapshot_names(now - dt.timedelta(hours=hours), now):
         url = f"https://raw.githubusercontent.com/{CLOUD_REPO}/{CLOUD_BRANCH}/data/snapshots/{name}"
         req = urllib.request.Request(url, headers={"User-Agent": "rbx-market-tracker/1.0"})
         try:
@@ -266,7 +269,7 @@ def cmd_pull(hours=24 * 62):
                 body = r.read()
         except urllib.error.HTTPError as e:
             if e.code == 404:
-                continue          # 그 달 데이터가 아직 없음
+                continue          # 그 날(달) 데이터가 없음
             log(f"  {name} 받기 실패: HTTP {e.code}")
             continue
         except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
@@ -288,7 +291,7 @@ def cmd_summary(hours, local):
         else:
             print("클라우드 데이터를 못 받아서 이 PC의 데이터로 요약합니다.")
     cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=hours)
-    files = [month_file(src, m) for m in months_between(cutoff, dt.datetime.now(dt.timezone.utc))]
+    files = [os.path.join(src, n) for n in snapshot_names(cutoff, dt.datetime.now(dt.timezone.utc))]
     files = [p for p in files if os.path.exists(p)]
     if not files:
         sys.exit("아직 데이터가 없습니다. 먼저 tracker.py를 실행하세요.")
