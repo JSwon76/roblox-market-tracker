@@ -31,6 +31,7 @@ import tracker
 from tracker import http_get_json, load_watchlist, log
 
 GAP_SEC = 0.5                      # 요청 사이 쉬는 시간
+GROUP_GAP_SEC = 1.5                # groups API 요청 사이 (한도가 더 빡빡함)
 DESC_KEEP = 300                    # 설명은 앞부분만 저장 (전체 변화는 해시로 잡음)
 PROFILE_DIR = os.path.join(tracker.DATA_DIR, "profiles")
 CHANGES_FILE = os.path.join(PROFILE_DIR, "changes.csv")
@@ -122,11 +123,27 @@ def fetch_passes(uid):
     return sorted(prices)
 
 
+def get_patient(url, waits=(30, 60)):
+    """groups API는 한도가 빡빡해서(429) 짧은 재시도로는 부족하다. 길게 쉬고 다시 시도."""
+    for w in (*waits, None):
+        try:
+            time.sleep(GROUP_GAP_SEC)
+            return http_get_json(url)
+        except RuntimeError:
+            if w is None:
+                raise
+            log(f"  한도 초과, {w}초 쉬고 다시 시도: {url}")
+            time.sleep(w)
+
+
 def fetch_creator(ctype, cid):
     """그룹 인원(그룹만)과 그 제작자의 공개 게임 목록 [(universe_id, 이름, 방문)]."""
     members = ""
     if ctype == "Group":
-        members = get(f"{GROUPS}/v1/groups/{cid}").get("memberCount", "")
+        try:
+            members = get_patient(f"{GROUPS}/v1/groups/{cid}").get("memberCount", "")
+        except Exception as e:      # 인원만 비우고 게임 목록은 계속 받는다
+            log(f"  그룹 {cid} 인원 실패: {e}")
         base = f"{GAMES}/v2/groups/{cid}/gamesV2?accessFilter=Public&limit=50&sortOrder=Desc"
     else:
         base = f"{GAMES}/v2/users/{cid}/games?accessFilter=Public&limit=50&sortOrder=Desc"
